@@ -17,10 +17,17 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 from commands import load_all, COMMAND_HANDLERS
 from commands.expense import undo_callback
+
+from commands.natural_language import (
+    handle_natural_language_message,
+    natural_language_callback,
+)
 
 
 load_dotenv()
@@ -35,9 +42,14 @@ logger = logging.getLogger(__name__)
 
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Full webhook URL (for production)
+
+# Full webhook URL for production.
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
-PORT = int(os.getenv("PORT", 8000))  # Default to 8000 for local webhook testing
+
+# Default port for local webhook testing.
+PORT = int(os.getenv("PORT", 8000))
 
 
 async def error_handler(
@@ -76,13 +88,17 @@ async def run_server(app: Application):
 
     async def telegram_webhook(request: Request):
         """Handle incoming webhook requests from Telegram."""
+
         if WEBHOOK_SECRET:
             received_secret = request.headers.get(
                 "X-Telegram-Bot-Api-Secret-Token"
             )
 
             if received_secret != WEBHOOK_SECRET:
-                logger.warning("Received webhook request with invalid secret")
+                logger.warning(
+                    "Received webhook request with invalid secret"
+                )
+
                 return PlainTextResponse(
                     "Unauthorized",
                     status_code=HTTPStatus.UNAUTHORIZED,
@@ -99,14 +115,13 @@ async def run_server(app: Application):
 
         return PlainTextResponse("OK")
 
-
     async def health(request: Request):
         """Health check endpoint."""
+
         return PlainTextResponse(
             "OK",
             status_code=HTTPStatus.OK,
         )
-
 
     web_app = Starlette(
         routes=[
@@ -123,15 +138,18 @@ async def run_server(app: Application):
         ]
     )
 
-    # Validate webhook URL is configured
+    # Validate webhook URL is configured.
     if not WEBHOOK_URL:
         logger.error(
             "WEBHOOK_URL environment variable is not set. "
             "Cannot run in webhook mode without a valid webhook URL."
         )
-        raise ValueError("WEBHOOK_URL must be set for webhook mode")
 
-    # Set up webhook with Telegram
+        raise ValueError(
+            "WEBHOOK_URL must be set for webhook mode"
+        )
+
+    # Set up webhook with Telegram.
     try:
         await app.bot.set_webhook(
             url=WEBHOOK_URL,
@@ -139,39 +157,62 @@ async def run_server(app: Application):
             allowed_updates=Update.ALL_TYPES,
         )
 
-        logger.info(f"✅ Webhook configured successfully")
-        logger.info(f"   Webhook URL: {WEBHOOK_URL}")
-        logger.info(f"   Secret token: {'configured' if WEBHOOK_SECRET else 'not configured'}")
+        logger.info(
+            "✅ Webhook configured successfully"
+        )
+
+        logger.info(
+            f"   Webhook URL: {WEBHOOK_URL}"
+        )
+
+        logger.info(
+            "   Secret token: "
+            f"{'configured' if WEBHOOK_SECRET else 'not configured'}"
+        )
 
     except Exception as e:
-        logger.error(f"Failed to set webhook: {e}")
+        logger.error(
+            f"Failed to set webhook: {e}"
+        )
+
         raise
 
-    # Configure Uvicorn server
+    # Configure Uvicorn server.
     config = uvicorn.Config(
         app=web_app,
         host="0.0.0.0",
         port=PORT,
         log_level="info",
     )
+
     server = uvicorn.Server(config)
 
-    logger.info(f"🚀 Starting webhook server on port {PORT}")
+    logger.info(
+        f"🚀 Starting webhook server on port {PORT}"
+    )
 
-    # Start the application and server
+    # Start the application and server.
     try:
         async with app:
             await app.start()
             await server.serve()
+
     except Exception as e:
-        logger.error(f"Server error: {e}")
+        logger.error(
+            f"Server error: {e}"
+        )
+
         raise
+
     finally:
-        # Ensure proper cleanup
+        # Ensure proper cleanup.
         try:
             await app.stop()
+
         except Exception as cleanup_error:
-            logger.warning(f"Error during cleanup: {cleanup_error}")
+            logger.warning(
+                f"Error during cleanup: {cleanup_error}"
+            )
 
 
 def main():
@@ -181,19 +222,31 @@ def main():
     logger.info("💰 TELEGRAM FINANCE BOT")
     logger.info("=" * 60)
 
-    # Automatically discover all commands
+    # Automatically discover all commands.
     load_all()
 
-    # Determine run mode from explicit RUN_MODE env var
-    run_mode = os.getenv("RUN_MODE", "polling").lower()
+    # Determine run mode from explicit RUN_MODE env var.
+    run_mode = os.getenv(
+        "RUN_MODE",
+        "polling",
+    ).lower()
 
     if run_mode == "webhook":
-        logger.info("🌐 Running in WEBHOOK mode")
+        logger.info(
+            "🌐 Running in WEBHOOK mode"
+        )
 
-        # Validate required configuration for webhook mode
+        # Validate required configuration for webhook mode.
         if not WEBHOOK_URL:
-            logger.error("❌ WEBHOOK_URL must be set for webhook mode")
-            logger.error("   Example: WEBHOOK_URL=https://your-app.onrender.com/YOUR_BOT_TOKEN")
+            logger.error(
+                "❌ WEBHOOK_URL must be set for webhook mode"
+            )
+
+            logger.error(
+                "   Example: "
+                "WEBHOOK_URL=https://your-app.onrender.com/YOUR_BOT_TOKEN"
+            )
+
             return
 
         app = (
@@ -204,7 +257,9 @@ def main():
         )
 
     elif run_mode == "polling":
-        logger.info("📡 Running in POLLING mode (local development)")
+        logger.info(
+            "📡 Running in POLLING mode (local development)"
+        )
 
         app = (
             Application.builder()
@@ -213,11 +268,18 @@ def main():
         )
 
     else:
-        logger.error(f"❌ Invalid RUN_MODE: '{run_mode}'. Must be 'polling' or 'webhook'")
+        logger.error(
+            f"❌ Invalid RUN_MODE: '{run_mode}'. "
+            "Must be 'polling' or 'webhook'"
+        )
+
         return
 
-    # Register all Telegram commands
-    logger.info(f"📝 Registering {len(COMMAND_HANDLERS)} commands...")
+    # Register all Telegram commands.
+    logger.info(
+        f"📝 Registering {len(COMMAND_HANDLERS)} commands..."
+    )
+
     for name, handler_func, description in COMMAND_HANDLERS:
         app.add_handler(
             CommandHandler(
@@ -225,9 +287,16 @@ def main():
                 handler_func,
             )
         )
-        logger.info(f"   /{name} - {description}")
 
-    # Register callback handlers
+        logger.info(
+            f"   /{name} - {description}"
+        )
+
+    # ---------------------------------------------------------
+    # CALLBACK HANDLERS
+    # ---------------------------------------------------------
+
+    # Existing undo callback.
     app.add_handler(
         CallbackQueryHandler(
             undo_callback,
@@ -235,22 +304,64 @@ def main():
         )
     )
 
-    app.add_error_handler(error_handler)
+    # Natural-language transaction confirmation/cancellation.
+    app.add_handler(
+        CallbackQueryHandler(
+            natural_language_callback,
+            pattern=r"^nl_(confirm|cancel)$",
+        )
+    )
+
+    # ---------------------------------------------------------
+    # NATURAL LANGUAGE TRANSACTION HANDLER
+    # ---------------------------------------------------------
+
+    # Handles ordinary text messages such as:
+    #
+    # "Spent ₹350 on dinner at Domino's"
+    #
+    # Slash commands are excluded because they are handled
+    # by the CommandHandlers above.
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle_natural_language_message,
+        )
+    )
+
+    # Register global error handler.
+    app.add_error_handler(
+        error_handler
+    )
 
     logger.info("=" * 60)
 
-    # Start the bot
+    # Start the bot.
     try:
+
         if run_mode == "webhook":
-            asyncio.run(run_server(app))
+            asyncio.run(
+                run_server(app)
+            )
+
         else:
-            app.post_init = prepare_polling
-            app.run_polling(drop_pending_updates=True)
+            app.post_init = (
+                prepare_polling
+            )
+
+            app.run_polling(
+                drop_pending_updates=True
+            )
 
     except KeyboardInterrupt:
-        logger.info("🛑 Bot stopped by user")
+        logger.info(
+            "🛑 Bot stopped by user"
+        )
+
     except Exception as e:
-        logger.exception(f"❌ Fatal error: {e}")
+        logger.exception(
+            f"❌ Fatal error: {e}"
+        )
 
 
 if __name__ == "__main__":
