@@ -63,8 +63,6 @@ def append_transaction(
     expense = amount if transaction_type == "expense" else ""
     income = amount if transaction_type == "income" else ""
 
-    # Column E (Remaining) should ONLY track Bank balance
-    # Use SUMIF to filter only Bank transactions from column G (Payment Method)
     remaining_formula = (
         f'=IF(OR(C{next_row}<>"",D{next_row}<>""),'
         f'SUMIF($G$2:$G{next_row},"Bank",$D$2:$D{next_row})-'
