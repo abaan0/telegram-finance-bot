@@ -82,12 +82,16 @@ def append_transaction(
 ):
     sheet = get_sheet()
 
-    next_row = (
-        len(
-            sheet.get_all_values()
-        )
-        + 1
-    )
+    # Look only at column A, which belongs to the transaction table.
+    dates = sheet.col_values(1)
+
+    # Find the first empty row after the header.
+    next_row = None
+
+    for row_number in range(2, len(dates) + 2):
+        if row_number > len(dates) or not dates[row_number - 1].strip():
+            next_row = row_number
+            break
 
     expense = (
         amount
@@ -121,11 +125,12 @@ def append_transaction(
         category,
     ]
 
-    sheet.append_row(
-        row,
+    # Write specifically to A:H of the transaction row.
+    sheet.update(
+        f"A{next_row}:H{next_row}",
+        [row],
         value_input_option="USER_ENTERED",
     )
-
 
 def get_last_expense():
     sheet = get_sheet()
