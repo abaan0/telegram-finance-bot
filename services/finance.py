@@ -6,111 +6,13 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo
 from collections import defaultdict
 
-import gspread
-from google.oauth2.service_account import Credentials
-
 from services.gemini import client, GEMINI_MODEL
 from google.genai import types
 
+from services.google_sheets import get_all_months_data
+
 # Timezone for date calculations
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Kolkata")
-
-# Google Sheets configuration
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-
-
-def get_sheet():
-    """Get the Google Sheets worksheet for the current month."""
-    spreadsheet_id = os.environ["SPREADSHEET_ID"]
-
-    worksheet_name = datetime.now(ZoneInfo(TIMEZONE)).strftime("%B")
-
-    credentials_json = os.getenv("GOOGLE_CREDENTIALS")
-
-    if credentials_json:
-        credentials = Credentials.from_service_account_info(
-            json.loads(credentials_json), scopes=SCOPES
-        )
-    else:
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        credentials_file = os.path.join(project_root, "credentials", "google-service-account.json")
-        credentials = Credentials.from_service_account_file(credentials_file, scopes=SCOPES)
-
-    client = gspread.authorize(credentials)
-    spreadsheet = client.open_by_key(spreadsheet_id)
-    return spreadsheet.worksheet(worksheet_name)
-
-
-def get_all_months_data() -> list[dict]:
-    """Fetch all months' data from Google Sheets."""
-    spreadsheet_id = os.environ["SPREADSHEET_ID"]
-
-    credentials_json = os.getenv("GOOGLE_CREDENTIALS")
-    if credentials_json:
-        credentials = Credentials.from_service_account_info(
-            json.loads(credentials_json), scopes=SCOPES
-        )
-    else:
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        credentials_file = os.path.join(project_root, "credentials", "google-service-account.json")
-        credentials = Credentials.from_service_account_file(credentials_file, scopes=SCOPES)
-
-    client = gspread.authorize(credentials)
-    spreadsheet = client.open_by_key(spreadsheet_id)
-
-    all_transactions = []
-
-    for worksheet in spreadsheet.worksheets():
-        try:
-            month_name = worksheet.title
-            rows = worksheet.get_all_values()
-            if len(rows) < 2:
-                continue
-
-            # Skip header row
-            for row_idx, row in enumerate(rows[1:], start=2):
-                if len(row) < 6:
-                    continue
-
-                date_str = row[0].strip()
-                item = row[1].strip()
-                expense_str = row[2].strip()
-                income_str = row[3].strip()
-                description = row[5].strip() if len(row) > 5 else ""
-                category = row[6].strip() if len(row) > 6 else ""
-
-                if not date_str:
-                    continue
-
-                # Parse date
-                try:
-                    transaction_date = datetime.strptime(date_str, "%d %b %y")
-                    transaction_date = transaction_date.replace(year=datetime.now().year)
-                except ValueError:
-                    try:
-                        transaction_date = datetime.strptime(date_str, "%d %b %Y")
-                    except ValueError:
-                        continue
-
-                expense = float(expense_str.replace(',', '')) if expense_str else 0
-                income = float(income_str.replace(',', '')) if income_str else 0
-
-                if expense > 0 or income > 0:
-                    all_transactions.append({
-                        "date": transaction_date,
-                        "item": item,
-                        "expense": expense,
-                        "income": income,
-                        "description": description,
-                        "category": category or infer_category(item, description),
-                        "month": month_name,
-                    })
-        except Exception as e:
-            print(f"Error reading worksheet {worksheet.title}: {e}")
-            continue
-
-    return all_transactions
-
 
 def infer_category(item: str, description: str) -> str:
     """Infer category from item and description."""
@@ -160,11 +62,23 @@ async def analyze_financial_data(transactions: list[dict]) -> dict:
         if t["expense"] > 0:
             category_totals[t["category"]] += t["expense"]
 
-    # Daily spending pattern
+    # Daily spending pattern for the last 30 days
+    thirty_days_ago = datetime.now(
+        ZoneInfo(TIMEZONE)
+    ) - timedelta(days=30)
+
     daily_totals = defaultdict(float)
-    for t in current_month_transactions:
-        if t["expense"] > 0:
-            day_key = t["date"].strftime("%Y-%m-%d")
+
+    for t in transactions:
+        transaction_date = t["date"].replace(
+            tzinfo=ZoneInfo(TIMEZONE)
+        )
+
+        if (
+            transaction_date >= thirty_days_ago
+            and t["expense"] > 0
+        ):
+            day_key = transaction_date.strftime("%Y-%m-%d")
             daily_totals[day_key] += t["expense"]
 
     # Day of week pattern
@@ -189,15 +103,32 @@ async def analyze_financial_data(transactions: list[dict]) -> dict:
     for t in prev_month_transactions:
         if t["expense"] > 0:
             prev_category_totals[t["category"]] += t["expense"]
+            # 6-month average
+            six_months_ago = datetime.now(
+                ZoneInfo(TIMEZONE)
+            ) - timedelta(days=180)
 
-    # 6-month average
-    six_months_ago = datetime.now(ZoneInfo(TIMEZONE)) - timedelta(days=180)
-    six_month_transactions = [
-        t for t in transactions
-        if t["date"].replace(tzinfo=ZoneInfo(TIMEZONE)) >= six_months_ago
-    ]
-    six_month_expense = sum(t["expense"] for t in six_month_transactions)
-    six_month_avg = six_month_expense / 6 if six_month_transactions else 0
+            six_month_transactions = [
+                t for t in transactions
+                if t["date"].replace(
+                    tzinfo=ZoneInfo(TIMEZONE)
+                ) >= six_months_ago
+            ]
+
+            six_month_expense = sum(
+                t["expense"] for t in six_month_transactions
+            )
+
+            months_with_data = len({
+                (t["date"].year, t["date"].month)
+                for t in six_month_transactions
+            })
+
+            six_month_avg = (
+                six_month_expense / months_with_data
+                if months_with_data > 0
+                else 0
+            )
 
     # Top expenses
     sorted_expenses = sorted(
@@ -233,7 +164,7 @@ CATEGORY COMPARISON:
 Current vs Average: {((total_expense - six_month_avg) / six_month_avg * 100) if six_month_avg > 0 else 0:+.1f}%
 
 DAILY SPENDING PATTERN (Last 30 days):
-{json.dumps(dict(list(daily_totals.items())[-30:]), indent=2)}
+{json.dumps(dict(daily_totals), indent=2)}
 
 DAY OF WEEK PATTERN:
 {json.dumps(dict(dow_totals), indent=2)}

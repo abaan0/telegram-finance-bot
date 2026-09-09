@@ -71,6 +71,103 @@ def get_sheet():
     )
 
 
+def get_all_months_data() -> list[dict]:
+    """Fetch all months' data from Google Sheets."""
+    spreadsheet_id = os.environ["SPREADSHEET_ID"]
+
+    credentials_json = os.getenv("GOOGLE_CREDENTIALS")
+
+    if credentials_json:
+        credentials = Credentials.from_service_account_info(
+            json.loads(credentials_json),
+            scopes=SCOPES,
+        )
+    else:
+        project_root = os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))
+        )
+
+        credentials_file = os.path.join(
+            project_root,
+            "credentials",
+            "google-service-account.json",
+        )
+
+        credentials = Credentials.from_service_account_file(
+            credentials_file,
+            scopes=SCOPES,
+        )
+
+    client = gspread.authorize(credentials)
+    spreadsheet = client.open_by_key(spreadsheet_id)
+
+    all_transactions = []
+
+    for worksheet in spreadsheet.worksheets():
+        try:
+            month_name = worksheet.title
+            rows = worksheet.get_all_values()
+
+            if len(rows) < 2:
+                continue
+
+            for row_idx, row in enumerate(rows[1:], start=2):
+                if len(row) < 6:
+                    continue
+
+                date_str = row[0].strip()
+                item = row[1].strip()
+                expense_str = row[2].strip()
+                income_str = row[3].strip()
+                description = row[5].strip() if len(row) > 5 else ""
+                category = row[6].strip() if len(row) > 6 else ""
+
+                if not date_str:
+                    continue
+
+                try:
+                    transaction_date = datetime.strptime(
+                        date_str, "%d %b %y"
+                    )
+                except ValueError:
+                    try:
+                        transaction_date = datetime.strptime(
+                            date_str, "%d %b %Y"
+                        )
+                    except ValueError:
+                        continue
+
+                expense = (
+                    float(expense_str.replace(",", ""))
+                    if expense_str
+                    else 0
+                )
+
+                income = (
+                    float(income_str.replace(",", ""))
+                    if income_str
+                    else 0
+                )
+
+                if expense > 0 or income > 0:
+                    all_transactions.append({
+                        "date": transaction_date,
+                        "item": item,
+                        "expense": expense,
+                        "income": income,
+                        "description": description,
+                        "category": category,
+                        "month": month_name,
+                    })
+
+        except Exception as e:
+            print(
+                f"Error reading worksheet {worksheet.title}: {e}"
+            )
+            continue
+
+    return all_transactions
+
 def append_transaction(
     date: str,
     item: str,
