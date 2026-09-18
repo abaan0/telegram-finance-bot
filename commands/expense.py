@@ -18,7 +18,7 @@ from services.google_sheets import (
 
 
 TRANSACTION_REGEX = re.compile(
-    r"^/(expense|income|expensecash|incomecash)\s+(.+?)\s+([1-9]\d*(?:\.\d{1,2})?)"
+    r"^/(expense|income|expensecash|incomecash)\s+(.+?)\s+((?:0|[1-9]\d*(?:\.\d{1,2})?))"
     r"(?:\s+(.+))?$",
     re.IGNORECASE,
 )
