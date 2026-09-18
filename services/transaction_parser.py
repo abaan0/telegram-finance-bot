@@ -263,7 +263,7 @@ Telegram message:
             "Could not determine transaction type."
         )
 
-    if amount <= 0:
+    if amount < 0:
         raise ValueError(
             "Could not determine a valid amount."
         )
