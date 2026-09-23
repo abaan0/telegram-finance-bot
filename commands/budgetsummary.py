@@ -550,8 +550,8 @@ def build_budget_summary_message(
     lines.extend(
         [
             "",
-            f"🤖 Analysis by {model_used} | "
-            f"{today.strftime('%d %b %Y, %I:%M %p')}",
+            f"🤖 Analysis done by ai. pls cross check. "
+            
         ]
     )
 
