@@ -10,6 +10,8 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from telegram import Update
 from telegram.error import TelegramError
 from telegram.ext import (
@@ -27,10 +29,8 @@ from commands.expense import undo_callback
 from commands.natural_language import (
     handle_natural_language_message,
     natural_language_callback,
+    natural_language_undo_callback,
 )
-
-
-load_dotenv()
 
 
 logging.basicConfig(
@@ -300,7 +300,15 @@ def main():
     app.add_handler(
         CallbackQueryHandler(
             undo_callback,
-            pattern=r"^undo_(yes|no)(:\d+)?$",
+            pattern=r"^undo_(yes|no)(?::\d+(?::[^:]*)?)?$",
+        )
+    )
+
+    # Undo button offered by optional fast-entry mode.
+    app.add_handler(
+        CallbackQueryHandler(
+            natural_language_undo_callback,
+            pattern=r"^nl_undo:\d+:[^:]+$",
         )
     )
 
@@ -308,7 +316,7 @@ def main():
     app.add_handler(
         CallbackQueryHandler(
             natural_language_callback,
-            pattern=r"^nl_(confirm|cancel)$",
+            pattern=r"^nl_(confirm|cancel):[a-f0-9]{12}$",
         )
     )
 

@@ -14,27 +14,7 @@ from services.google_sheets import get_all_months_data
 # Timezone for date calculations
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Kolkata")
 
-def infer_category(item: str, description: str) -> str:
-    """Infer category from item and description."""
-    text = f"{item} {description}".lower()
-
-    categories = {
-        "food": ["food", "restaurant", "cafe", "coffee", "lunch", "dinner", "breakfast", "groceries", "grocery", "zomato", "swiggy", "delivery", "meal", "eat", "snack", "drink", "water", "juice", "beer", "wine", "alcohol", "ice cream", "icecream", "dessert", "cake", "chocolate", "pizza", "burger", "sandwich", "mamma"],
-        "transport": ["uber", "ola", "taxi", "cab", "auto", "metro", "bus", "train", "fuel", "petrol", "diesel", "parking", "toll", "transport", "travel", "flight", "ticket"],
-        "shopping": ["amazon", "flipkart", "shopping", "clothes", "clothing", "shoes", "shirt", "pants", "dress", "electronics", "phone", "laptop", "gadget", "accessory", "bag", "watch", "jewelry", "cosmetic", "makeup", "skincare"],
-        "entertainment": ["movie", "cinema", "theatre", "netflix", "prime", "hotstar", "spotify", "subscription", "game", "gaming", "concert", "event", "party", "club", "bar", "pub", "entertainment", "turf", "agnels", "sports", "football", "cricket", "tennis", "badminton", "gym", "fitness"],
-        "health": ["medicine", "pharmacy", "doctor", "hospital", "clinic", "medical", "health", "dental", "eye", "checkup", "test", "lab", "insurance", "gym", "fitness", "yoga", "therapy"],
-        "utilities": ["electricity", "water", "gas", "internet", "wifi", "broadband", "mobile", "phone bill", "recharge", "utility", "bill", "rent", "maintenance"],
-        "education": ["course", "book", "education", "learning", "training", "certification", "udemy", "coursera", "workshop", "seminar"],
-        "personal": ["haircut", "salon", "spa", "grooming", "personal", "gift", "donation", "charity", "pet", "veterinary"],
-    }
-
-    for category, keywords in categories.items():
-        if any(keyword in text for keyword in keywords):
-            return category.title()
-
-    return "Other"
-
+from services.categories import infer_category
 
 async def analyze_financial_data(transactions: list[dict]) -> dict:
     """Analyze financial data using Gemini AI for insights."""
@@ -42,9 +22,14 @@ async def analyze_financial_data(transactions: list[dict]) -> dict:
     if not transactions:
         return {"error": "No transactions found"}
 
-    # Prepare data summary for AI
-    current_month = datetime.now(ZoneInfo(TIMEZONE)).month
-    current_year = datetime.now(ZoneInfo(TIMEZONE)).year
+    # Use the same configured timezone as transaction parsing and worksheet routing.
+    today = datetime.now(ZoneInfo(TIMEZONE))
+    current_month = today.month
+    current_year = today.year
+    month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    next_month_start = (month_start + timedelta(days=32)).replace(day=1)
+    days_in_month = (next_month_start - timedelta(days=1)).day
+    days_remaining = days_in_month - today.day
 
     # Filter current month transactions
     current_month_transactions = [
@@ -63,9 +48,7 @@ async def analyze_financial_data(transactions: list[dict]) -> dict:
             category_totals[t["category"]] += t["expense"]
 
     # Daily spending pattern for the last 30 days
-    thirty_days_ago = datetime.now(
-        ZoneInfo(TIMEZONE)
-    ) - timedelta(days=30)
+    thirty_days_ago = today - timedelta(days=30)
 
     daily_totals = defaultdict(float)
 
@@ -103,32 +86,22 @@ async def analyze_financial_data(transactions: list[dict]) -> dict:
     for t in prev_month_transactions:
         if t["expense"] > 0:
             prev_category_totals[t["category"]] += t["expense"]
-            # 6-month average
-            six_months_ago = datetime.now(
-                ZoneInfo(TIMEZONE)
-            ) - timedelta(days=180)
 
-            six_month_transactions = [
-                t for t in transactions
-                if t["date"].replace(
-                    tzinfo=ZoneInfo(TIMEZONE)
-                ) >= six_months_ago
-            ]
-
-            six_month_expense = sum(
-                t["expense"] for t in six_month_transactions
-            )
-
-            months_with_data = len({
-                (t["date"].year, t["date"].month)
-                for t in six_month_transactions
-            })
-
-            six_month_avg = (
-                six_month_expense / months_with_data
-                if months_with_data > 0
-                else 0
-            )
+    # Calculate this even when the previous month has no expenses. Previously
+    # this was nested inside the loop and could leave six_month_avg undefined.
+    six_months_ago = today - timedelta(days=180)
+    six_month_transactions = [
+        transaction for transaction in transactions
+        if transaction["date"].replace(tzinfo=ZoneInfo(TIMEZONE)) >= six_months_ago
+    ]
+    six_month_expense = sum(
+        transaction["expense"] for transaction in six_month_transactions
+    )
+    months_with_data = len({
+        (transaction["date"].year, transaction["date"].month)
+        for transaction in six_month_transactions
+    })
+    six_month_avg = six_month_expense / months_with_data if months_with_data else 0
 
     # Top expenses
     sorted_expenses = sorted(
@@ -139,15 +112,15 @@ async def analyze_financial_data(transactions: list[dict]) -> dict:
 
     # Build prompt for Gemini
     prompt = f"""
-You are a personal financial advisor analyzing the user's spending data for {datetime.now().strftime('%B %Y')}.
+You are a personal financial advisor analyzing the user's spending data for {today.strftime('%B %Y')}.
 
-CURRENT MONTH DATA ({datetime.now().strftime('%B %Y')}):
+CURRENT MONTH DATA ({today.strftime('%B %Y')}):
 - Total Expenses: ₹{total_expense:,.2f}
 - Total Income: ₹{total_income:,.2f}
 - Net Savings: ₹{total_income - total_expense:,.2f}
 - Savings Rate: {((total_income - total_expense) / total_income * 100) if total_income > 0 else 0:.1f}%
-- Days Elapsed: {datetime.now().day}
-- Days Remaining in Month: {(datetime(current_year, current_month + 1, 1) - timedelta(days=1)).day - datetime.now().day if current_month < 12 else (datetime(current_year + 1, 1, 1) - timedelta(days=1)).day - datetime.now().day}
+- Days Elapsed: {today.day}
+- Days Remaining in Month: {days_remaining}
 
 CATEGORY BREAKDOWN (Current Month):
 {json.dumps(dict(category_totals), indent=2)}
@@ -184,8 +157,8 @@ Return ONLY valid JSON matching this schema:
     "net_savings": {total_income - total_expense},
     "savings_rate_percent": {((total_income - total_expense) / total_income * 100) if total_income > 0 else 0},
     "projected_month_end_expenses": 0,
-    "daily_average_spending": {total_expense / datetime.now().day if datetime.now().day > 0 else 0},
-    "days_remaining_in_month": {(datetime(current_year, current_month + 1, 1) - timedelta(days=1)).day - datetime.now().day if current_month < 12 else (datetime(current_year + 1, 1, 1) - timedelta(days=1)).day - datetime.now().day}
+    "daily_average_spending": {total_expense / today.day if today.day > 0 else 0},
+    "days_remaining_in_month": {days_remaining}
   }},
   "category_analysis": [
     {{"category": "Food", "current": 0, "previous": 0, "change_percent": 0, "trend": "up/down/stable", "insight": "string"}},
@@ -233,7 +206,8 @@ RULES:
 """
 
     try:
-        response = client.models.generate_content(
+        response = await asyncio.to_thread(
+            client.models.generate_content,
             model=GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -256,8 +230,8 @@ RULES:
                 "net_savings": total_income - total_expense,
                 "savings_rate_percent": ((total_income - total_expense) / total_income * 100) if total_income > 0 else 0,
                 "projected_month_end_expenses": 0,
-                "daily_average_spending": total_expense / datetime.now().day if datetime.now().day > 0 else 0,
-                "days_remaining_in_month": 0,
+                "daily_average_spending": total_expense / today.day if today.day > 0 else 0,
+                "days_remaining_in_month": days_remaining,
             }
         }
 
@@ -285,8 +259,11 @@ def calculate_budget_health(category_totals: dict, budget_config: dict) -> dict:
     near_limit = []
     projected_over = []
 
-    days_elapsed = datetime.now().day
-    days_in_month = (datetime(datetime.now().year, datetime.now().month + 1, 1) - timedelta(days=1)).day if datetime.now().month < 12 else 31
+    today = datetime.now(ZoneInfo(TIMEZONE))
+    days_elapsed = today.day
+    month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    next_month_start = (month_start + timedelta(days=32)).replace(day=1)
+    days_in_month = (next_month_start - timedelta(days=1)).day
     projection_factor = days_in_month / days_elapsed if days_elapsed > 0 else 1
 
     for category, budget in budget_config.items():

@@ -44,3 +44,10 @@ credentials/
 # OS
 .DS_Store
 Thumbs.db
+# Local secrets; never commit or upload these
+.env.*
+!.env.example
+credentials/
+*.pem
+*.key
+service-account*.json

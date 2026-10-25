@@ -1,3 +1,4 @@
+import asyncio
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -630,8 +631,8 @@ async def budgetsummary(
             "📊 Analyzing spending patterns..."
         )
 
-        transactions = (
-            get_all_months_data()
+        transactions = await asyncio.to_thread(
+            get_all_months_data
         )
 
         if not transactions:
