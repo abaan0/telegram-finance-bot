@@ -1,53 +1,178 @@
 # Telegram Finance Bot
 
-A dedicated Telegram bot for personal finance management with AI-powered insights.
+A personal finance tracking bot built with Telegram, Google Sheets, and Google Gemini. Log transactions using commands or natural language, automatically organize them by month, track bank and cash balances, and receive AI-powered spending insights.
 
 ## Features
 
-- **Expense Tracking**: Log expenses with `/expense item amount [description] [date]`
-- **Income Tracking**: Log income with `/income item amount [description] [date]`
-- **Cash Transactions**: Track cash payments with `/expensecash` and `/incomecash`
-- **Undo**: Undo the last expense with `/undoexpense`
-- **Budget Summary**: Get AI-powered financial analysis with `/budgetsummary`
-- **Optional Fast Entry**: Save very clear natural-language transactions automatically, with an Undo button
+- **Expense Tracking:** Record bank expenses using `/expense` or natural language.
+- **Income Tracking:** Record bank income using `/income` or natural language.
+- **Cash Transactions:** Track cash income and expenses separately from bank transactions.
+- **Automatic Monthly Worksheets:** Create missing monthly worksheets automatically using the previous month's layout.
+- **Balance Carryover:** Carry forward the previous month's closing bank balance into the new month's worksheet.
+- **Backdated Transactions:** Automatically save transactions to the worksheet corresponding to their transaction date, rather than the current month.
+- **Natural-Language Parsing:** Extract transaction details such as item, amount, date, payment method, and category from everyday messages using Gemini.
+- **Transaction Confirmation:** Review and confirm parsed natural-language transactions before they are saved.
+- **Optional Fast Entry:** Automatically save sufficiently clear natural-language transactions without requiring confirmation, with an Undo button.
+- **Undo Expense:** Remove the most recently recorded expense using `/undoexpense`.
+- **AI Budget Analysis:** Generate spending summaries, category breakdowns, budget health checks, and personalized recommendations.
+- **Flexible Amount Formats:** Handle commonly used amount formats, including values such as `₹2,600` and `₹2,50,000`.
 
 ## Commands
 
-- `/expense <item> <amount> [description] [date]` - Add a bank expense
-- `/income <item> <amount> [description] [date]` - Add bank income
-- `/expensecash <item> <amount> [description] [date]` - Add a cash expense
-- `/incomecash <item> <amount> [description] [date]` - Add cash income
-- `/undoexpense` - Undo the most recent expense
-- `/budgetsummary` - Get comprehensive financial summary with AI insights
+| Command | Description |
+|---|---|
+| `/expense <item> <amount> [description] [date]` | Record a bank expense |
+| `/income <item> <amount> [description] [date]` | Record bank income |
+| `/expensecash <item> <amount> [description] [date]` | Record a cash expense |
+| `/incomecash <item> <amount> [description] [date]` | Record cash income |
+| `/undoexpense` | Undo the most recent expense |
+| `/budgetsummary` | Generate a financial summary with AI-powered insights |
 
-## Setup
+Dates and descriptions are optional where supported. Natural-language messages can be used when you do not want to enter a transaction through a command.
 
-1. Clone the repository
-2. Install dependencies: `pip install -r requirements.txt`
-3. Copy `.env.example` to `.env` and fill in your credentials
-4. Set `SPREADSHEET_ID`, `BOT_TOKEN`, `ADMIN_ID`, and `GEMINI_API_KEY`. Set either `GOOGLE_CREDENTIALS` (service-account JSON as a string) or `GOOGLE_CREDENTIALS_FILE` (path to the JSON file).
-5. For optional fast entry, set `FAST_ENTRY_MODE=true`; the default `false` keeps Confirm/Cancel for every natural-language transaction. You can set `FAST_ENTRY_MIN_CONFIDENCE` (default `0.92`) to control how clear a message must be before auto-save. Each fast save has an Undo button.
-6. Run the bot: `python bot.py`
+## How It Works
 
-## Environment Variables
-
-See `.env.example` for required configuration.
+1. Send a transaction command or describe a transaction in natural language.
+2. The bot extracts the relevant transaction details.
+3. Depending on the entry mode, confirm the transaction or allow a sufficiently clear transaction to be saved automatically.
+4. The bot writes the transaction to the appropriate Google Sheets worksheet.
+5. Use `/budgetsummary` to review spending patterns and receive AI-generated insights.
 
 ## Google Sheets Integration
 
-The bot stores transactions in Google Sheets with the following structure:
+Transactions are stored in Google Sheets, with a separate worksheet for each month.
 
-| Date | Item | Expense | Income | Remaining | Description | Payment Method | Category |
-|------|------|---------|--------|-----------|-------------|----------------|----------|
+The worksheet uses the following columns:
 
-Each month has its own worksheet. Existing names such as `Aug`, `Sep`, and `October` are supported. New worksheets use short year-aware names such as `Nov 26` so next year's months do not collide with this year's. When a month is missing, the bot duplicates the previous month's layout, clears the old transaction rows, and inserts a carryover row that references the prior month's bank balance. Transactions dated in a previous month are written to that month's worksheet. The category is read from column H, and carryover is excluded from income in AI budget analysis.
+| Column | Field |
+|---|---|
+| A | Date |
+| B | Item |
+| C | Expenses |
+| D | Income |
+| E | Remaining |
+| F | Description |
+| G | Payment Method |
+| H | Category |
 
-## AI Analysis
+### Automatic Monthly Management
 
-The bot uses Google Gemini to provide:
+- **Worksheet creation:** When a required monthly worksheet does not exist, the bot creates it using the previous month's layout.
+- **Carryover balance:** The new worksheet starts with a carryover row based on the previous month's closing bank balance.
+- **Backdated transactions:** Transactions are recorded in the worksheet matching their transaction date, including transactions from previous months.
+- **Year-aware worksheet names:** Existing names such as `Aug`, `Sep`, and `October` are supported. New worksheets use compact names such as `Nov 26` to avoid month-name collisions across years.
+- **Balance calculations:** Bank and cash transactions are tracked separately using the spreadsheet's balance formulas and helper calculations.
+- **Category analysis:** The bot reads transaction categories from column H.
+- **Accurate income reporting:** Carryover balances are excluded from earned-income totals in AI budget analysis.
+
+## AI Budget Analysis
+
+The `/budgetsummary` command uses Google Gemini to analyze your financial data and provide:
+
 - Monthly spending insights
-- Category breakdowns
+- Expense breakdowns by category
 - Budget health checks
 - Month-over-month comparisons
-- Personalized recommendations
 - Spending pattern analysis
+- Personalized recommendations
+
+Carryover balances are handled separately from earned income to avoid inflating income totals in the analysis.
+
+## Setup
+
+### Prerequisites
+
+- Python installed on your system
+- A Telegram bot created through [BotFather](https://t.me/BotFather)
+- A Google Cloud service account with access to the Google Sheets API
+- A Google spreadsheet for storing transactions
+- A Google Gemini API key
+
+### Installation
+
+1. Clone the repository:
+
+   ```bash
+   git clone https://github.com/abaan0/telegram-finance-bot.git
+   cd telegram-finance-bot
+   ```
+
+2. Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Create your environment configuration:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   On Windows Command Prompt, you can copy the file using:
+
+   ```cmd
+   copy .env.example .env
+   ```
+
+4. Configure the required environment variables in `.env`.
+
+5. Ensure your Google service account has the required permissions to access and edit the target spreadsheet.
+
+6. Start the bot:
+
+   ```bash
+   python bot.py
+   ```
+
+## Environment Variables
+
+Configure the following variables in your `.env` file:
+
+| Variable | Description |
+|---|---|
+| `BOT_TOKEN` | Telegram bot token obtained from BotFather |
+| `ADMIN_ID` | Telegram user ID authorized to use the bot |
+| `SPREADSHEET_ID` | ID of the Google spreadsheet used for transactions |
+| `GEMINI_API_KEY` | API key used for natural-language parsing and AI budget analysis |
+| `GOOGLE_CREDENTIALS` | Optional service-account JSON credentials supplied as a string |
+| `GOOGLE_CREDENTIALS_FILE` | Optional path to a service-account JSON credentials file |
+| `FAST_ENTRY_MODE` | Enables automatic saving of sufficiently clear natural-language transactions; defaults to `false` |
+| `FAST_ENTRY_MIN_CONFIDENCE` | Minimum confidence threshold for automatic saving; defaults to `0.92` |
+
+Set either `GOOGLE_CREDENTIALS` or `GOOGLE_CREDENTIALS_FILE` to configure Google Sheets authentication.
+
+### Fast Entry Mode
+
+By default, `FAST_ENTRY_MODE=false`, so natural-language transactions follow the normal confirmation process.
+
+To enable automatic saving of sufficiently clear transactions:
+
+```env
+FAST_ENTRY_MODE=true
+FAST_ENTRY_MIN_CONFIDENCE=0.92
+```
+
+When enabled, transactions meeting the configured confidence threshold can be saved automatically. Each fast-saved transaction provides an Undo button.
+
+Keep fast entry disabled if you prefer to review every transaction before it is recorded.
+
+## Configuration and Security
+
+- Keep `.env` and service-account credential files private.
+- Never commit bot tokens, API keys, or service-account credentials to a public repository.
+- Ensure the Google service account has access to the correct spreadsheet.
+- Back up your spreadsheet regularly, since it contains your financial records.
+- Review automatically parsed transactions and AI-generated insights when accuracy matters.
+
+## Technology Stack
+
+- **Python** for the bot and transaction-processing logic
+- **Python Telegram Bot** for Telegram commands and interactions
+- **Google Sheets API** for storing and organizing transactions
+- **gspread** for Google Sheets integration
+- **Google Gemini** for natural-language transaction parsing and financial analysis
+
+## Repository
+
+GitHub: [abaan0/telegram-finance-bot](https://github.com/abaan0/telegram-finance-bot)
